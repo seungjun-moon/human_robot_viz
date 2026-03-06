@@ -171,7 +171,9 @@ pyarrow
 
 ## ALLEX Robot
 
-ALLEX is a 48-DOF humanoid upper body with 12 additional mimic (coupled) joints, totaling 60 revolute joints. The FK is computed from a URDF model stored in `assets/allex_v2_urdf/`.
+ALLEX is a 48-DOF humanoid upper body with 12 additional mimic (coupled) joints, totaling 60 revolute joints. The FK is computed from a URDF model expected at `assets/allex_v2_urdf/allex.urdf`.
+
+> **Note:** The ALLEX URDF is not included in this repository. You must obtain it separately and place it under `assets/allex_v2_urdf/`.
 
 | Component | DOF |
 |-----------|-----|
