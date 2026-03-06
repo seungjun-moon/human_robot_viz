@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.claude/
+vis_html/
+*.html
+samples/
+assets/allex_v2_urdf/
