@@ -17,7 +17,7 @@ Usage:
 
     # Sample datasets + LeRobot categories
     python scripts/plot_trajectories.py \
-        --sample-dirs samples/ego10k samples/egodex \
+        --sample-dirs samples/* \
         --arkit-datasets egodex \
         --categories egodex_v4 RLWRLD --n 1
 """
@@ -299,6 +299,8 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skeleton-frame", type=int, default=0,
                         help="Frame index for skeleton visualization")
+    parser.add_argument("--max-episodes", type=int, default=None,
+                        help="Max episodes to load per sample-dir (randomly subsampled)")
     args = parser.parse_args()
 
     for cat in (args.categories or []):
@@ -341,7 +343,9 @@ def main():
               f"{' (ARKit transform)' if use_arkit else ''}")
         trajs = load_hdf5_episodes(sample_dir, args.joints, fingertips,
                                     arkit_transform=use_arkit,
-                                    cam_space=args.cam_space)
+                                    cam_space=args.cam_space,
+                                    max_episodes=args.max_episodes,
+                                    seed=args.seed)
         trajs = [subsample_traj(t, args.max_frames) for t in trajs]
         if trajs:
             cat_data[ds_name] = (color_map[ds_name], ds_name, trajs)

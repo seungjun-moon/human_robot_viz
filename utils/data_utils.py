@@ -87,7 +87,9 @@ def _find_hdf5_files(directory: Path) -> list[Path]:
 def load_hdf5_episodes(dataset_dir: Path, joints: list[str],
                         fingertips: list[str] = None,
                         arkit_transform: bool = False,
-                        cam_space: bool = False) -> list[dict]:
+                        cam_space: bool = False,
+                        max_episodes: int = None,
+                        seed: int = 42) -> list[dict]:
     """Load raw *.hdf5 sample files, extract positions from SE3 transforms.
 
     All sample datasets live under samples/[DATASET_NAME]/.../*.hdf5 and share
@@ -111,6 +113,12 @@ def load_hdf5_episodes(dataset_dir: Path, joints: list[str],
     if not raw_files:
         print(f"  No raw .hdf5 files found in {dataset_dir}")
         return []
+
+    if max_episodes is not None and len(raw_files) > max_episodes:
+        total = len(raw_files)
+        rng = random.Random(seed)
+        raw_files = sorted(rng.sample(raw_files, max_episodes))
+        print(f"  Subsampled to {max_episodes}/{total} episodes")
 
     all_keys = list(joints)
     key_map = {k: EGODEX_JOINT_MAP[k] for k in joints}
