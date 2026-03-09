@@ -167,6 +167,91 @@ def make_3d_html(cat_data: dict[str, tuple[str, str, list[dict]]],
     print(f"Saved to {output}")
 
 
+def _frustum_traces(c2w: np.ndarray, color: str, label: str,
+                     legendgroup: str, fov_h: float = 60.0,
+                     fov_w: float = 80.0, depth: float = 0.15):
+    """Generate Scatter3d traces for a camera frustum pyramid.
+
+    Args:
+        c2w: (4, 4) camera-to-world transform.
+        color: hex color string.
+        label: legend label.
+        legendgroup: plotly legend group.
+        fov_h: vertical FOV in degrees.
+        fov_w: horizontal FOV in degrees.
+        depth: frustum depth (distance from apex to near plane).
+
+    Returns:
+        List of go.Scatter3d traces.
+    """
+    pos = c2w[:3, 3]
+    right = c2w[:3, 0]
+    up = c2w[:3, 1]
+    forward = -c2w[:3, 2]  # camera looks along -z in camera frame
+
+    h = depth * np.tan(np.radians(fov_h / 2))
+    w = depth * np.tan(np.radians(fov_w / 2))
+    center = pos + forward * depth
+
+    tl = center + up * h - right * w
+    tr = center + up * h + right * w
+    bl = center - up * h - right * w
+    br = center - up * h + right * w
+
+    traces = []
+    # 4 edges from apex to corners
+    for corner in [tl, tr, br, bl]:
+        traces.append(go.Scatter3d(
+            x=[pos[0], corner[0]], y=[pos[1], corner[1]], z=[pos[2], corner[2]],
+            mode="lines",
+            line=dict(color=color, width=3),
+            opacity=0.7,
+            legendgroup=legendgroup,
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+
+    # Near-plane rectangle
+    rect = np.array([tl, tr, br, bl, tl])
+    traces.append(go.Scatter3d(
+        x=rect[:, 0], y=rect[:, 1], z=rect[:, 2],
+        mode="lines",
+        line=dict(color=color, width=3),
+        opacity=0.7,
+        legendgroup=legendgroup,
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Forward axis line (slightly beyond frustum depth for visibility)
+    fwd_end = pos + forward * depth * 1.3
+    traces.append(go.Scatter3d(
+        x=[pos[0], fwd_end[0]], y=[pos[1], fwd_end[1]], z=[pos[2], fwd_end[2]],
+        mode="lines",
+        line=dict(color=color, width=2, dash="dash"),
+        opacity=0.5,
+        legendgroup=legendgroup,
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Camera position marker
+    traces.append(go.Scatter3d(
+        x=[pos[0]], y=[pos[1]], z=[pos[2]],
+        mode="markers+text",
+        marker=dict(color=color, size=6, symbol="diamond"),
+        text=["cam"],
+        textposition="top center",
+        textfont=dict(size=8, color=color),
+        name=f"{label} (camera)",
+        legendgroup=legendgroup,
+        showlegend=False,
+        hovertemplate="Camera<br>x=%{x:.3f}<br>y=%{y:.3f}<br>z=%{z:.3f}<extra></extra>",
+    ))
+
+    return traces
+
+
 def make_skeleton_html(cat_data: dict[str, tuple[str, str, list[dict]]],
                         joints: list[str], fingertips: list[str],
                         title: str, output: str, frame_idx: int = 0):
@@ -175,6 +260,7 @@ def make_skeleton_html(cat_data: dict[str, tuple[str, str, list[dict]]],
     Shows all joints in a single 3D scene with bones connecting them.
     One skeleton per category (first episode, specified frame).
     Trajectories from all episodes shown faintly in the background.
+    Camera frustum shown if camera c2w data is available.
     """
     bones = list(SKELETON_BONES)
     if fingertips:
@@ -250,6 +336,13 @@ def make_skeleton_html(cat_data: dict[str, tuple[str, str, list[dict]]],
                 showlegend=False,
                 hoverinfo="skip",
             ))
+
+        # Camera frustum
+        if "_camera_c2w" in traj:
+            c2w_all = traj["_camera_c2w"]
+            t_cam = min(t, c2w_all.shape[0] - 1)
+            for trace in _frustum_traces(c2w_all[t_cam], color, label, cat_name):
+                fig.add_trace(trace)
 
     n_total = sum(len(v[2]) for v in cat_data.values())
     cats_str = " vs ".join(v[1] for v in cat_data.values())

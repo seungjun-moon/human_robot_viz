@@ -152,6 +152,15 @@ def load_hdf5_episodes(dataset_dir: Path, joints: list[str],
                     for k in all_keys:
                         result[k]["pos"][t] = converted[k][:3, 3]
                         result[k]["rpy"][t] = rotation_matrix_to_euler(converted[k][:3, :3])
+
+                # Store camera c2w if available (converted to ALLEx frame)
+                if "camera" in transforms:
+                    cam_raw = transforms["camera"][:]  # (T, 4, 4)
+                    cam_c2w = np.zeros((T, 4, 4))
+                    for t in range(T):
+                        cam_c2w[t] = converter.convert_frame(
+                            hip_raw[t], {"cam": cam_raw[t]})["cam"]
+                    result["_camera_c2w"] = cam_c2w
             else:
                 # Direct mode: read transforms as-is
                 # Determine T from first available mapped joint
@@ -189,6 +198,15 @@ def load_hdf5_episodes(dataset_dir: Path, joints: list[str],
                     for t in range(T):
                         rpy[t] = rotation_matrix_to_euler(tf[t, :3, :3])
                     result[k] = {"pos": pos, "rpy": rpy}
+
+                # Store camera c2w for frustum visualization
+                if "camera" in transforms:
+                    c2w_full = transforms["camera"][:]  # (T, 4, 4)
+                    if cam_space:
+                        # In cam space, camera is at origin looking along -z
+                        result["_camera_c2w"] = np.tile(np.eye(4), (T, 1, 1))
+                    else:
+                        result["_camera_c2w"] = c2w_full
 
         result["_video_path"] = _find_video_for_hdf5(rf)
         result["_label"] = str(rel)
