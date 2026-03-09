@@ -172,6 +172,8 @@ def _frustum_traces(c2w: np.ndarray, color: str, label: str,
                      fov_w: float = 80.0, depth: float = 0.15):
     """Generate Scatter3d traces for a camera frustum pyramid.
 
+    ARKit / OpenGL camera convention: right=+x, up=+y, forward=-z.
+
     Args:
         c2w: (4, 4) camera-to-world transform.
         color: hex color string.
@@ -187,7 +189,7 @@ def _frustum_traces(c2w: np.ndarray, color: str, label: str,
     pos = c2w[:3, 3]
     right = c2w[:3, 0]
     up = c2w[:3, 1]
-    forward = -c2w[:3, 2]  # camera looks along -z in camera frame
+    forward = -c2w[:3, 2]  # ARKit/OpenGL: camera looks along -z
 
     h = depth * np.tan(np.radians(fov_h / 2))
     w = depth * np.tan(np.radians(fov_w / 2))
