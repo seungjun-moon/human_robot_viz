@@ -4,21 +4,19 @@ Interactive 3D visualization comparing multiple sample datasets and LeRobot data
 Loads raw SE3 transforms from sample *.hdf5 files and extracts joint positions
 directly. Plots alongside existing LeRobot dataset trajectories (which go through FK).
 
+Assumes input HDF5 files contain transforms already in the desired coordinate
+frame (e.g. ROS conventions). No axis conversion is applied.
+
 Sample datasets live under samples/[DATASET_NAME]/.../*.hdf5.
 
 Usage:
     # Compare two sample datasets
     python scripts/plot_trajectories.py \
-        --sample-dirs samples/ego10k samples/egodex --n 1
-
-    # With camera-space conversion
-    python scripts/plot_trajectories.py \
-        --sample-dirs samples/ego10k --cam_space --n 1
+        --sample-dirs samples/* --n 1
 
     # Sample datasets + LeRobot categories
     python scripts/plot_trajectories.py \
         --sample-dirs samples/* \
-        --arkit-datasets egodex \
         --categories egodex_v4 RLWRLD --n 1
 """
 
@@ -64,7 +62,9 @@ def subsample_traj(traj: dict, max_frames: int) -> dict:
     indices = np.linspace(0, T - 1, max_frames, dtype=int)
     result = {}
     for k, v in traj.items():
-        if k.startswith("_"):
+        if k == "_camera_c2w":
+            result[k] = v[indices]
+        elif k.startswith("_"):
             result[k] = v
         else:
             result[k] = {"pos": v["pos"][indices], "rpy": v["rpy"][indices]}
@@ -172,7 +172,8 @@ def _frustum_traces(c2w: np.ndarray, color: str, label: str,
                      fov_w: float = 80.0, depth: float = 0.15):
     """Generate Scatter3d traces for a camera frustum pyramid.
 
-    ARKit / OpenGL camera convention: right=+x, up=+y, forward=-z.
+    Uses +z as forward (camera viewing direction), +x as right, +y as up,
+    matching the convention in ARKit c2w transforms.
 
     Args:
         c2w: (4, 4) camera-to-world transform.
@@ -189,7 +190,7 @@ def _frustum_traces(c2w: np.ndarray, color: str, label: str,
     pos = c2w[:3, 3]
     right = c2w[:3, 0]
     up = c2w[:3, 1]
-    forward = -c2w[:3, 2]  # ARKit/OpenGL: camera looks along -z
+    forward = c2w[:3, 2]  # camera looks along +z
 
     h = depth * np.tan(np.radians(fov_h / 2))
     w = depth * np.tan(np.radians(fov_w / 2))
@@ -374,9 +375,6 @@ def main():
     parser.add_argument("--sample-dirs", type=str, nargs="+", default=[],
                         help="Directories containing raw *.hdf5 sample files "
                              "(e.g. samples/ego10k samples/egodex)")
-    parser.add_argument("--arkit-datasets", nargs="*", default=[],
-                        help="Names of sample datasets that need ARKit→ALLEx transform "
-                             "(matched against directory name, e.g. 'egodex')")
     parser.add_argument("--categories", nargs="*", default=[],
                         help="LeRobot categories to compare against")
     parser.add_argument("--joints", nargs="+", default=ALL_JOINT_NAMES)
@@ -385,8 +383,6 @@ def main():
                         help="Plot only fingertips instead of all hand joints")
     parser.add_argument("--max-frames", type=int, default=50,
                         help="Max frames per episode (uniformly subsampled if longer)")
-    parser.add_argument("--cam_space", action="store_true", default=False,
-                        help="Convert keypoints to camera space via inv(c2w)")
     parser.add_argument("--output", type=str, default=None,
                         help="Output directory for HTML files (default: vis_html/)")
     parser.add_argument("--n", type=int, default=50,
@@ -396,6 +392,8 @@ def main():
                         help="Frame index for skeleton visualization")
     parser.add_argument("--max-episodes", type=int, default=None,
                         help="Max episodes to load per sample-dir (randomly subsampled)")
+    parser.add_argument("--undo-geocalib", action="store_true",
+                        help="Undo GeoCalib gravity alignment on camera extrinsics")
     args = parser.parse_args()
 
     for cat in (args.categories or []):
@@ -409,8 +407,6 @@ def main():
         fingertips = ALL_FINGERTIP_NAMES
     else:
         fingertips = ALL_HAND_JOINT_NAMES
-
-    arkit_set = set(args.arkit_datasets)
 
     # Collect all dataset names that need colors (samples + categories)
     all_names = []
@@ -433,14 +429,11 @@ def main():
             print(f"Warning: {sample_dir} not found, skipping")
             continue
 
-        use_arkit = ds_name in arkit_set
-        print(f"[{ds_name}] Loading from {sample_dir}"
-              f"{' (ARKit transform)' if use_arkit else ''}")
+        print(f"[{ds_name}] Loading from {sample_dir}")
         trajs = load_hdf5_episodes(sample_dir, args.joints, fingertips,
-                                    arkit_transform=use_arkit,
-                                    cam_space=args.cam_space,
                                     max_episodes=args.max_episodes,
-                                    seed=args.seed)
+                                    seed=args.seed,
+                                    undo_geocalib=args.undo_geocalib)
         trajs = [subsample_traj(t, args.max_frames) for t in trajs]
         if trajs:
             cat_data[ds_name] = (color_map[ds_name], ds_name, trajs)
@@ -477,8 +470,7 @@ def main():
 
     # Build descriptive prefix from dataset names
     ds_names = "_".join(cat_data.keys())
-    space = "cam" if args.cam_space else "world"
-    prefix = out_dir / f"{ds_names}_{space}"
+    prefix = out_dir / ds_names
 
     # Body joints
     make_3d_html(cat_data, args.joints, JOINT_DISPLAY,
